@@ -29,6 +29,7 @@ enum SUPPORTED_MMIO {
     MMIO_PLIC,
     MMIO_UART,
     MMIO_VIRTIOBLK,
+    MMIO_VIRTIOSND,
 #if RV32_HAS(GOLDFISH_RTC)
     MMIO_RTC,
 #endif /* RV32_HAS(GOLDFISH_RTC) */
@@ -70,6 +71,20 @@ enum SUPPORTED_MMIO {
                 return;                                                               \
             )                                                                         \
             break;                                                                    \
+        case MMIO_VIRTIOSND:                                                          \
+            IIF(rw)( /* read */                                                       \
+                virtio_snd_read(&PRIV(rv)->cpu, PRIV(rv)->vsnd, addr & 0xFFFFF,         \
+                                RV_MEM_LW, &mmio_read_val);                            \
+                emu_update_vsnd_interrupts(rv);                                       \
+                return mmio_read_val;                                                 \
+                ,    /* write */                                                      \
+                virtio_snd_write(&PRIV(rv)->cpu, PRIV(rv)->vsnd, addr & 0xFFFFF,        \
+                                 RV_MEM_SW, val);                                     \
+                emu_update_vsnd_interrupts(rv);                                       \
+                return;                                                               \
+            )                                                                         \
+            break;                                                                    \
+
         IIF(RV32_FEATURE_GOLDFISH_RTC)(                                               \
         case MMIO_RTC:                                                                \
             IIF(rw)( /* read */                                                       \
@@ -99,6 +114,10 @@ enum SUPPORTED_MMIO {
                 PRIV(rv)->vblk_curr =                                         \
                     PRIV(rv)->vblk[hi - PRIV(rv)->vblk_mmio_base_hi];         \
                 MMIO_OP(MMIO_VIRTIOBLK, MMIO_R);                              \
+            } else if (PRIV(rv)->vsnd_cnt &&                                  \
+                       hi >= PRIV(rv)->vsnd_mmio_base_hi &&                   \
+                       hi <= PRIV(rv)->vsnd_mmio_max_hi) {                    \
+                MMIO_OP(MMIO_VIRTIOSND, MMIO_R);                              \
             } else {                                                          \
                 switch (hi) {                                                 \
                 case 0x0:                                                     \
@@ -121,6 +140,7 @@ enum SUPPORTED_MMIO {
         }                                                                     \
     } while (0)
 
+
 #define MMIO_WRITE()                                                          \
     do {                                                                      \
         if ((addr >> 28) == 0xF) { /* MMIO at 0xF_______ */                   \
@@ -131,6 +151,10 @@ enum SUPPORTED_MMIO {
                 PRIV(rv)->vblk_curr =                                         \
                     PRIV(rv)->vblk[hi - PRIV(rv)->vblk_mmio_base_hi];         \
                 MMIO_OP(MMIO_VIRTIOBLK, MMIO_W);                              \
+            } else if (PRIV(rv)->vsnd_cnt &&                                  \
+                       hi >= PRIV(rv)->vsnd_mmio_base_hi &&                   \
+                       hi <= PRIV(rv)->vsnd_mmio_max_hi) {                    \
+                MMIO_OP(MMIO_VIRTIOSND, MMIO_W);                              \
             } else {                                                          \
                 switch (hi) {                                                 \
                 case 0x0:                                                     \
@@ -152,6 +176,7 @@ enum SUPPORTED_MMIO {
             }                                                                 \
         }                                                                     \
     } while (0)
+
 /* clang-format on */
 
 void emu_update_uart_interrupts(riscv_t *rv);

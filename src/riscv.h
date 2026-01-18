@@ -531,6 +531,13 @@ typedef struct {
     uint32_t vblk_mmio_max_hi;
     int vblk_irq_base;
     int vblk_cnt;
+
+    /* virtio-snd device */
+    virtio_snd_state_t *vsnd;
+    uint32_t vsnd_mmio_base_hi;
+    uint32_t vsnd_mmio_max_hi;
+    int vsnd_irq_base;
+    int vsnd_cnt;
 #endif /* RV32_HAS(SYSTEM_MMIO) */
 
     /* vm memory object */

@@ -4,7 +4,7 @@
  */
 
 #pragma once
-
+#include <stdbool.h>
 #define VIRTIO_VENDOR_ID 0x12345678
 #define VIRTIO_MAGIC_NUMBER 0x74726976
 #define VIRTIO_VERSION 2
@@ -32,6 +32,8 @@
 #define VIRTIO_BLK_S_OK 0
 #define VIRTIO_BLK_S_IOERR 1
 #define VIRTIO_BLK_S_UNSUPP 2
+
+#define VIRTIO_SND_DEV_ID 25
 
 /* TODO: support more features */
 #define VIRTIO_BLK_F_RO (1 << 5)
@@ -119,3 +121,45 @@ uint32_t *virtio_blk_init(virtio_blk_state_t *vblk,
 virtio_blk_state_t *vblk_new();
 
 void vblk_delete(virtio_blk_state_t *vblk);
+
+
+typedef struct {
+    uint32_t QueueNum;
+    uint32_t QueueDesc;
+    uint32_t QueueAvail;
+    uint32_t QueueUsed;
+    uint16_t last_avail;
+    bool ready;
+} virtio_snd_queue_t;
+
+typedef struct {
+    /* feature negotiation */
+    uint32_t DeviceFeatures;
+    uint32_t DeviceFeaturesSel;
+    uint32_t DriverFeatures;
+    uint32_t DriverFeaturesSel;
+    /* queue config */
+    uint32_t QueueSel;
+    virtio_snd_queue_t queues[4];
+    /* status */
+    uint32_t Status;
+    uint32_t InterruptStatus;
+    /* supplied by environment */
+    uint32_t *ram;
+    /* implementation-specific */
+    void *priv;
+} virtio_snd_state_t;
+
+/* sound API */
+void virtio_snd_read(hart_t *vm,
+                     virtio_snd_state_t *vsnd,
+                     uint32_t addr,
+                     uint8_t width,
+                     uint32_t *value);
+void virtio_snd_write(hart_t *vm,
+                      virtio_snd_state_t *vsnd,
+                      uint32_t addr,
+                      uint8_t width,
+                      uint32_t value);
+bool virtio_snd_init(virtio_snd_state_t *vsnd);
+
