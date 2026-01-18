@@ -71,6 +71,11 @@
             interrupts = <2>;
             interrupt-parent = <&plic0>;
         };
+        vsnd0: virtio@4200000 {
+            compatible = "virtio,mmio";
+            reg = <0x04200000 0x200>;
+            interrupts = <3>;
+        };
 
         /*
          * Virtio block example subnode

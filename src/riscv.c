@@ -469,83 +469,18 @@ static void load_dtb(char **ram_loc, vm_attr_t *attr)
         }
     }
 
-        /* virtio-snd */
+        /* virtio-snd (fixed in minimal.dts) */
     if (attr->vsnd_cnt) {
-        int node = fdt_path_offset(dtb_buf, "/soc@F0000000");
-        assert(node >= 0);
+        const char *vsnd_path = "/soc@F0000000/virtio@4200000";
+        int vsnd_node = fdt_path_offset(dtb_buf, vsnd_path);
+        if (vsnd_node < 0)
+            rv_log_warn("virtio-snd DTB node missing: %s", vsnd_path);
 
-        uint32_t base_addr = 0x4000000;
-        uint32_t addr_offset = 0x100000;
-        uint32_t size = 0x200;
-
-        uint32_t next_addr = base_addr;
-        uint32_t next_irq = 1;
-
-        /* scan existing nodes to get next addr and irq */
-        int subnode;
-        fdt_for_each_subnode(subnode, dtb_buf, node)
-        {
-            const char *name = fdt_get_name(dtb_buf, subnode, NULL);
-            assert(name);
-
-            char *at_pos = strchr(name, '@');
-            assert(at_pos);
-
-            char *endptr;
-            uint32_t addr = strtoul(at_pos + 1, &endptr, 16);
-            if (endptr == at_pos + 1) {
-                attr->vsnd_cnt = 0;
-                rv_log_error(
-                    "Invalid unit-address in node: %s, skipping virtio snd MMIO",
-                    name);
-                goto dtb_end;
-            }
-            if (addr == next_addr)
-                next_addr = addr + addr_offset;
-
-            const fdt32_t *irq_prop =
-                fdt_getprop(dtb_buf, subnode, "interrupts", NULL);
-            if (irq_prop) {
-                uint32_t irq = fdt32_to_cpu(*irq_prop);
-                if (irq == next_irq)
-                    next_irq = irq + 1;
-            }
-        }
-
-        /* set IRQ for virtio snd */
-        attr->vsnd_irq_base = next_irq;
-
-        /* set the VSND MMIO valid range */
-        attr->vsnd_mmio_base_hi = next_addr >> 20;
-        attr->vsnd_mmio_max_hi = attr->vsnd_mmio_base_hi + attr->vsnd_cnt;
-
-        /* adding new virtio snd nodes */
-        for (int i = 0; i < attr->vsnd_cnt; i++) {
-            uint32_t new_addr = next_addr + i * addr_offset;
-            uint32_t new_irq = next_irq + i;
-
-            char node_name[32];
-            snprintf(node_name, sizeof(node_name), "virtio@%x", new_addr);
-
-            int subnode = fdt_add_subnode(dtb_buf, node, node_name);
-            if (subnode == -FDT_ERR_NOSPACE) {
-                rv_log_warn("add subnode no space!\n");
-            }
-            assert(subnode >= 0);
-
-            /* compatible = "virtio,mmio" */
-            assert(fdt_setprop_string(dtb_buf, subnode, "compatible",
-                                      "virtio,mmio") == 0);
-
-            /* reg = <new_addr size> */
-            uint32_t reg[2] = {cpu_to_fdt32(new_addr), cpu_to_fdt32(size)};
-            assert(fdt_setprop(dtb_buf, subnode, "reg", reg, sizeof(reg)) == 0);
-
-            /* interrupts = <new_irq> */
-            uint32_t irq = cpu_to_fdt32(new_irq);
-            assert(fdt_setprop(dtb_buf, subnode, "interrupts", &irq,
-                               sizeof(irq)) == 0);
-        }
+        /* fixed MMIO/IRQ for virtio-snd */
+        const uint32_t vsnd_addr = 0x4200000;
+        attr->vsnd_irq_base = 3;
+        attr->vsnd_mmio_base_hi = vsnd_addr >> 20;
+        attr->vsnd_mmio_max_hi = attr->vsnd_mmio_base_hi;
     }
 
 
