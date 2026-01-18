@@ -181,6 +181,7 @@ enum SUPPORTED_MMIO {
 
 void emu_update_uart_interrupts(riscv_t *rv);
 void emu_update_vblk_interrupts(riscv_t *rv);
+void emu_update_vsnd_interrupts(riscv_t *rv);
 #if RV32_HAS(GOLDFISH_RTC)
 void emu_update_rtc_interrupts(riscv_t *rv);
 #endif /* RV32_HAS(GOLDFISH_RTC) */

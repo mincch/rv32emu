@@ -470,9 +470,9 @@ static int virtio_snd_io_desc_flush_handler(virtio_snd_state_t *vsnd,
 
 static void virtio_snd_set_fail(virtio_snd_state_t *vsnd)
 {
-    vsnd->Status |= VIRTIO_STATUS__DEVICE_NEEDS_RESET;
-    if (vsnd->Status & VIRTIO_STATUS__DRIVER_OK)
-        vsnd->InterruptStatus |= VIRTIO_INT__CONF_CHANGE;
+    vsnd->Status |= VIRTIO_STATUS_DEVICE_NEEDS_RESET;
+    if (vsnd->Status & VIRTIO_STATUS_DRIVER_OK)
+        vsnd->InterruptStatus |= VIRTIO_INT_CONF_CHANGE;
 }
 
 /* Check whether the address is valid or not */
@@ -976,10 +976,10 @@ static void virtio_queue_notify_handler(virtio_snd_state_t *vsnd, int index)
 {
     uint32_t *ram = vsnd->ram;
     virtio_snd_queue_t *queue = &vsnd->queues[index & 0x03];
-    if (vsnd->Status & VIRTIO_STATUS__DEVICE_NEEDS_RESET)
+    if (vsnd->Status & VIRTIO_STATUS_DEVICE_NEEDS_RESET)
         return;
 
-    if (!((vsnd->Status & VIRTIO_STATUS__DRIVER_OK) && queue->ready))
+    if (!((vsnd->Status & VIRTIO_STATUS_DRIVER_OK) && queue->ready))
         return virtio_snd_set_fail(vsnd);
 
     /* Check for new buffers */
@@ -1032,7 +1032,7 @@ static void virtio_queue_notify_handler(virtio_snd_state_t *vsnd, int index)
 
     /* Send interrupt, unless VIRTQ_AVAIL_F_NO_INTERRUPT is set */
     if (!(ram[queue->QueueAvail] & 1))
-        vsnd->InterruptStatus |= VIRTIO_INT__USED_RING;
+        vsnd->InterruptStatus |= VIRTIO_INT_USED_RING;
 }
 
 /* TX thread context */
