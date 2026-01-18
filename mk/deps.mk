@@ -67,9 +67,16 @@ HAVE_SDL2 := $(call pkg-exists,sdl2)
 # SDL2_mixer
 HAVE_SDL2_MIXER := $(shell $(PKG_CONFIG) --exists SDL2_mixer $(DEVNULL) && echo y)
 
+# PortAudio
+HAVE_PORTAUDIO := $(call pkg-exists,portaudio-2.0)
+ifeq ($(HAVE_PORTAUDIO),)
+    HAVE_PORTAUDIO := $(call pkg-exists,portaudio)
+endif
+
 # Export for Kconfig
 export HAVE_SDL2
 export HAVE_SDL2_MIXER
+export HAVE_PORTAUDIO
 
 # Compute SDL flags only when SDL is enabled (deferred until after .config)
 # These are used by the build rules, guarded by CONFIG_SDL
@@ -82,6 +89,18 @@ ifeq ($(HAVE_SDL2_MIXER),y)
 ifeq ($(CONFIG_SDL_MIXER),y)
     SDL2_MIXER_LIBS := $(call dep,libs,SDL2_mixer)
 endif
+endif
+endif
+
+ifeq ($(CONFIG_SYSTEM),y)
+ifneq ($(HAVE_PORTAUDIO),)
+    ifeq ($(call pkg-exists,portaudio-2.0),y)
+        PORTAUDIO_PKG := portaudio-2.0
+    else
+        PORTAUDIO_PKG := portaudio
+    endif
+    PORTAUDIO_CFLAGS := $(call dep,cflags,$(PORTAUDIO_PKG))
+    PORTAUDIO_LIBS := $(call dep,libs,$(PORTAUDIO_PKG))
 endif
 endif
 

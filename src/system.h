@@ -73,18 +73,16 @@ enum SUPPORTED_MMIO {
             break;                                                                    \
         case MMIO_VIRTIOSND:                                                          \
             IIF(rw)( /* read */                                                       \
-                virtio_snd_read(&PRIV(rv)->cpu, PRIV(rv)->vsnd, addr & 0xFFFFF,         \
-                                RV_MEM_LW, &mmio_read_val);                            \
+                virtio_snd_read(PRIV(rv)->vsnd, addr & 0xFFFFF,                         \
+                                &mmio_read_val);                                      \
                 emu_update_vsnd_interrupts(rv);                                       \
                 return mmio_read_val;                                                 \
                 ,    /* write */                                                      \
-                virtio_snd_write(&PRIV(rv)->cpu, PRIV(rv)->vsnd, addr & 0xFFFFF,        \
-                                 RV_MEM_SW, val);                                     \
+                virtio_snd_write(PRIV(rv)->vsnd, addr & 0xFFFFF, val);                 \
                 emu_update_vsnd_interrupts(rv);                                       \
                 return;                                                               \
             )                                                                         \
             break;                                                                    \
-
         IIF(RV32_FEATURE_GOLDFISH_RTC)(                                               \
         case MMIO_RTC:                                                                \
             IIF(rw)( /* read */                                                       \

@@ -152,15 +152,6 @@ typedef struct {
 } virtio_snd_state_t;
 
 /* sound API */
-void virtio_snd_read(hart_t *vm,
-                     virtio_snd_state_t *vsnd,
-                     uint32_t addr,
-                     uint8_t width,
-                     uint32_t *value);
-void virtio_snd_write(hart_t *vm,
-                      virtio_snd_state_t *vsnd,
-                      uint32_t addr,
-                      uint8_t width,
-                      uint32_t value);
+void virtio_snd_read(virtio_snd_state_t *vsnd, uint32_t addr, uint32_t *value);
+void virtio_snd_write(virtio_snd_state_t *vsnd, uint32_t addr, uint32_t value);
 bool virtio_snd_init(virtio_snd_state_t *vsnd);
-

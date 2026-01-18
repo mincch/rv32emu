@@ -66,6 +66,7 @@ static char *opt_bootargs;
 #define VBLK_DEV_MAX 100
 static char *opt_virtio_blk_img[VBLK_DEV_MAX];
 static int opt_virtio_blk_idx = 0;
+static int opt_virtio_snd_cnt = 0;
 #endif
 
 static void print_usage(const char *filename)
@@ -87,6 +88,7 @@ static void print_usage(const char *filename)
         "<image> as virtio-blk disk image "
         "(default read and write). This option may be specified "
         "multiple times for multiple block devices\n"
+        "  -x vsnd or -x vsnd:1 : enable virtio-snd device (only 1 supported)\n"
         "  -b <bootargs> : use customized <bootargs> for the kernel\n"
 #endif
         "  -d [filename]: dump registers as JSON to the "
@@ -138,11 +140,30 @@ static bool parse_args(int argc, char **args)
                              VBLK_DEV_MAX);
                 return false;
             }
-            if (!strncmp("vblk:", optarg, 5))
+            if (!strncmp("vblk:", optarg, 5)) {
                 opt_virtio_blk_img[opt_virtio_blk_idx++] =
                     optarg + 5; /* strlen("vblk:") */
-            else
+            } else if (!strncmp("vsnd", optarg, 4)) {
+                int cnt = 1;
+                if (optarg[4] == ':') {
+                    char *endptr = NULL;
+                    long parsed = strtol(optarg + 5, &endptr, 10);
+                    if (!endptr || *endptr != '\0' || parsed <= 0) {
+                        rv_log_error("Invalid vsnd count: %s\n", optarg);
+                        return false;
+                    }
+                    cnt = (int) parsed;
+                } else if (optarg[4] != '\0') {
+                    return false;
+                }
+                if (cnt > 1) {
+                    rv_log_error("virtio-snd only supports 1 device now.\n");
+                    return false;
+                }
+                opt_virtio_snd_cnt = cnt;
+            } else {
                 return false;
+            }
             emu_argc++;
             break;
 #endif
@@ -305,6 +326,7 @@ int main(int argc, char **args)
     attr.data.system.kernel = opt_kernel_img;
     attr.data.system.initrd = opt_rootfs_img;
     attr.data.system.bootargs = opt_bootargs;
+    attr.data.system.vsnd_cnt = opt_virtio_snd_cnt;
     if (opt_virtio_blk_idx) {
         attr.data.system.vblk_device = opt_virtio_blk_img;
         attr.data.system.vblk_device_cnt = opt_virtio_blk_idx;

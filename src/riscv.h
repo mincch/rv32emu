@@ -498,6 +498,7 @@ typedef struct {
     char *bootargs;
     char **vblk_device;
     int vblk_device_cnt;
+    int vsnd_cnt;
 } vm_system_t;
 #endif /* RV32_HAS(SYSTEM) */
 

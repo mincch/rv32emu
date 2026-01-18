@@ -469,6 +469,86 @@ static void load_dtb(char **ram_loc, vm_attr_t *attr)
         }
     }
 
+        /* virtio-snd */
+    if (attr->vsnd_cnt) {
+        int node = fdt_path_offset(dtb_buf, "/soc@F0000000");
+        assert(node >= 0);
+
+        uint32_t base_addr = 0x4000000;
+        uint32_t addr_offset = 0x100000;
+        uint32_t size = 0x200;
+
+        uint32_t next_addr = base_addr;
+        uint32_t next_irq = 1;
+
+        /* scan existing nodes to get next addr and irq */
+        int subnode;
+        fdt_for_each_subnode(subnode, dtb_buf, node)
+        {
+            const char *name = fdt_get_name(dtb_buf, subnode, NULL);
+            assert(name);
+
+            char *at_pos = strchr(name, '@');
+            assert(at_pos);
+
+            char *endptr;
+            uint32_t addr = strtoul(at_pos + 1, &endptr, 16);
+            if (endptr == at_pos + 1) {
+                attr->vsnd_cnt = 0;
+                rv_log_error(
+                    "Invalid unit-address in node: %s, skipping virtio snd MMIO",
+                    name);
+                goto dtb_end;
+            }
+            if (addr == next_addr)
+                next_addr = addr + addr_offset;
+
+            const fdt32_t *irq_prop =
+                fdt_getprop(dtb_buf, subnode, "interrupts", NULL);
+            if (irq_prop) {
+                uint32_t irq = fdt32_to_cpu(*irq_prop);
+                if (irq == next_irq)
+                    next_irq = irq + 1;
+            }
+        }
+
+        /* set IRQ for virtio snd */
+        attr->vsnd_irq_base = next_irq;
+
+        /* set the VSND MMIO valid range */
+        attr->vsnd_mmio_base_hi = next_addr >> 20;
+        attr->vsnd_mmio_max_hi = attr->vsnd_mmio_base_hi + attr->vsnd_cnt;
+
+        /* adding new virtio snd nodes */
+        for (int i = 0; i < attr->vsnd_cnt; i++) {
+            uint32_t new_addr = next_addr + i * addr_offset;
+            uint32_t new_irq = next_irq + i;
+
+            char node_name[32];
+            snprintf(node_name, sizeof(node_name), "virtio@%x", new_addr);
+
+            int subnode = fdt_add_subnode(dtb_buf, node, node_name);
+            if (subnode == -FDT_ERR_NOSPACE) {
+                rv_log_warn("add subnode no space!\n");
+            }
+            assert(subnode >= 0);
+
+            /* compatible = "virtio,mmio" */
+            assert(fdt_setprop_string(dtb_buf, subnode, "compatible",
+                                      "virtio,mmio") == 0);
+
+            /* reg = <new_addr size> */
+            uint32_t reg[2] = {cpu_to_fdt32(new_addr), cpu_to_fdt32(size)};
+            assert(fdt_setprop(dtb_buf, subnode, "reg", reg, sizeof(reg)) == 0);
+
+            /* interrupts = <new_irq> */
+            uint32_t irq = cpu_to_fdt32(new_irq);
+            assert(fdt_setprop(dtb_buf, subnode, "interrupts", &irq,
+                               sizeof(irq)) == 0);
+        }
+    }
+
+
 dtb_end:
     memcpy(blob, dtb_buf, minimal_len + DTB_EXPAND_SIZE);
     free(dtb_buf);
@@ -705,8 +785,9 @@ riscv_t *rv_create(riscv_user_t rv_attr)
      * *----------------*----------------*-------*
      */
 
-    /* load_dtb needs the count to add the virtio block subnode dynamically */
+    /* load_dtb needs the count to add the virtio device subnode dynamically */
     attr->vblk_cnt = attr->data.system.vblk_device_cnt;
+    attr->vsnd_cnt = attr->data.system.vsnd_cnt;
 
     char *ram_loc = (char *) attr->mem->mem_base;
     map_file(&ram_loc, attr->data.system.kernel, 0);
@@ -770,6 +851,20 @@ riscv_t *rv_create(riscv_user_t rv_attr)
     attr->rtc = rtc_new();
     assert(attr->rtc);
 #endif /* RV32_HAS(GOLDFISH_RTC) */
+
+    if (attr->vsnd_cnt > 0) {
+        if (attr->vsnd_cnt > 1) {
+            rv_log_warn("virtio-snd only supports 1 device; clamping to 1");
+            attr->vsnd_cnt = 1;
+        }
+        attr->vsnd = calloc(1, sizeof(virtio_snd_state_t));
+        assert(attr->vsnd);
+        attr->vsnd->ram = (uint32_t *) attr->mem->mem_base;
+        if (!virtio_snd_init(attr->vsnd)) {
+            rv_log_fatal("Failed to initialize virtio-snd");
+            exit(EXIT_FAILURE);
+        }
+    }
 
     attr->vblk = calloc(attr->vblk_cnt, sizeof(virtio_blk_state_t *));
     assert(attr->vblk);
@@ -948,6 +1043,8 @@ fail_mpool:
         free(attr->vblk);
     }
     free(attr->disk);
+    if (attr->vsnd)
+        free(attr->vsnd);
 #endif
     map_delete(attr->fd_map);
     memory_delete(attr->mem);
@@ -1098,6 +1195,8 @@ void rv_delete(riscv_t *rv)
 #if RV32_HAS(GOLDFISH_RTC)
     rtc_delete(attr->rtc);
 #endif /* RV32_HAS(GOLDFISH_RTC) */
+    if (attr->vsnd)
+        free(attr->vsnd);
     /* sync device, cleanup inside the callee */
     rv_fsync_device();
 #endif

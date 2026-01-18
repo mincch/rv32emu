@@ -7,7 +7,6 @@
 
 #include <portaudio.h>
 
-#include "device.h"
 #include "riscv.h"
 #include "riscv_private.h"
 #include "utils.h"
@@ -18,7 +17,12 @@
 #define VSND_QUEUE_NUM_MAX 1024
 #define vsndq (vsnd->queues[vsnd->QueueSel])
 
-#define PRIV(x) ((virtio_snd_config_t *) x->priv)
+#define VSND_PRIV(x) ((virtio_snd_config_t *) (x)->priv)
+
+static inline bool vsnd_range_check(uint32_t addr, uint32_t base, uint32_t size)
+{
+    return addr >= base && addr < (base + size);
+}
 
 #define VSND_CNFA_FRAME_SZ 2
 
@@ -372,7 +376,7 @@ static uint32_t flush_stream_id = 0;
             node->vq_desc.addr = desc[0];                                    \
             node->vq_desc.len = desc[2];                                     \
             node->vq_desc.flags = desc[3];                                   \
-            list_push(&node->q, &q);                                         \
+            list_add(&node->q, &q);                                          \
             desc_idx = desc[3] >> 16; /* vq_desc[desc_cnt].next */           \
                                                                              \
             cnt++;                                                           \
@@ -478,7 +482,14 @@ static void virtio_snd_set_fail(virtio_snd_state_t *vsnd)
 /* Check whether the address is valid or not */
 static inline uint32_t vsnd_preprocess(virtio_snd_state_t *vsnd, uint32_t addr)
 {
-    if ((addr >= RAM_SIZE) || (addr & 0b11))
+    /* When MEM_SIZE is 4GB, all 32-bit addresses are in bounds by definition.
+     * Use compile-time check to avoid GCC -Wtype-limits warning.
+     */
+#if MEM_SIZE < 0x100000000ULL
+    if ((addr >= MEM_SIZE) || (addr & 0b11))
+#else
+    if (addr & 0b11)
+#endif
         return virtio_snd_set_fail(vsnd), 0;
 
     /* shift right as we have checked in the above */
@@ -494,17 +505,17 @@ static void virtio_snd_update_status(virtio_snd_state_t *vsnd, uint32_t status)
     /* Reset */
     uint32_t *ram = vsnd->ram;
     void *priv = vsnd->priv;
-    uint32_t jacks = PRIV(vsnd)->jacks;
-    uint32_t streams = PRIV(vsnd)->streams;
-    uint32_t chmaps = PRIV(vsnd)->chmaps;
-    uint32_t controls = PRIV(vsnd)->controls;
+    uint32_t jacks = VSND_PRIV(vsnd)->jacks;
+    uint32_t streams = VSND_PRIV(vsnd)->streams;
+    uint32_t chmaps = VSND_PRIV(vsnd)->chmaps;
+    uint32_t controls = VSND_PRIV(vsnd)->controls;
     memset(vsnd, 0, sizeof(*vsnd));
     vsnd->ram = ram;
     vsnd->priv = priv;
-    PRIV(vsnd)->jacks = jacks;
-    PRIV(vsnd)->streams = streams;
-    PRIV(vsnd)->chmaps = chmaps;
-    PRIV(vsnd)->controls = controls;
+    VSND_PRIV(vsnd)->jacks = jacks;
+    VSND_PRIV(vsnd)->streams = streams;
+    VSND_PRIV(vsnd)->chmaps = chmaps;
+    VSND_PRIV(vsnd)->controls = controls;
 }
 
 static void virtio_snd_read_jack_info_handler(
@@ -827,6 +838,9 @@ static int virtio_snd_stream_cb(const void *input,
                                 PaStreamCallbackFlags status_flags,
                                 void *user_data)
 {
+    (void) input;
+    (void) time_info;
+    (void) status_flags;
     vsnd_stream_sel_t *v_ptr = (vsnd_stream_sel_t *) user_data;
     uint32_t id = v_ptr->stream_id;
     int channels = vsnd_props[id].pp.channels;
@@ -966,7 +980,7 @@ static void __virtio_snd_frame_enqueue(void *payload,
     memcpy(node->addr, payload, n);
     node->len = n;
     node->pos = 0;
-    list_push(&node->q, &props->buf_queue_head);
+    list_add(&node->q, &props->buf_queue_head);
 
 tx_frame_enqueue_final:
     pthread_mutex_unlock(&props->lock.lock);
@@ -1093,11 +1107,11 @@ static bool virtio_snd_reg_read(virtio_snd_state_t *vsnd,
         return true;
     default:
         /* Invalid address which exceeded the range */
-        if (!RANGE_CHECK(addr, _(Config), sizeof(virtio_snd_config_t)))
+        if (!vsnd_range_check(addr, _(Config), sizeof(virtio_snd_config_t)))
             return false;
 
         /* Read configuration from the corresponding register */
-        *value = ((uint32_t *) PRIV(vsnd))[addr - _(Config)];
+        *value = ((uint32_t *) VSND_PRIV(vsnd))[addr - _(Config)];
 
         return true;
     }
@@ -1184,58 +1198,25 @@ static bool virtio_snd_reg_write(virtio_snd_state_t *vsnd,
         return true;
     default:
         /* Invalid address which exceeded the range */
-        if (!RANGE_CHECK(addr, _(Config), sizeof(virtio_snd_config_t)))
+        if (!vsnd_range_check(addr, _(Config), sizeof(virtio_snd_config_t)))
             return false;
 
         /* Write configuration to the corresponding register */
-        ((uint32_t *) PRIV(vsnd))[addr - _(Config)] = value;
+        ((uint32_t *) VSND_PRIV(vsnd))[addr - _(Config)] = value;
 
         return true;
     }
 #undef _
 }
-void virtio_snd_read(hart_t *vm,
-                     virtio_snd_state_t *vsnd,
-                     uint32_t addr,
-                     uint8_t width,
-                     uint32_t *value)
+void virtio_snd_read(virtio_snd_state_t *vsnd, uint32_t addr, uint32_t *value)
 {
-    switch (width) {
-    case RV_MEM_LW:
-        if (!virtio_snd_reg_read(vsnd, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
-        break;
-    case RV_MEM_LBU:
-    case RV_MEM_LB:
-    case RV_MEM_LHU:
-    case RV_MEM_LH:
-        vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
-        break;
-
-    default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
-        break;
-    }
+    if (!virtio_snd_reg_read(vsnd, addr >> 2, value))
+        rv_log_error("virtio-snd read invalid addr 0x%x", addr);
 }
-void virtio_snd_write(hart_t *vm,
-                      virtio_snd_state_t *vsnd,
-                      uint32_t addr,
-                      uint8_t width,
-                      uint32_t value)
+void virtio_snd_write(virtio_snd_state_t *vsnd, uint32_t addr, uint32_t value)
 {
-    switch (width) {
-    case RV_MEM_SW:
-        if (!virtio_snd_reg_write(vsnd, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
-        break;
-    case RV_MEM_SB:
-    case RV_MEM_SH:
-        vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
-        break;
-    default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
-        break;
-    }
+    if (!virtio_snd_reg_write(vsnd, addr >> 2, value))
+        rv_log_error("virtio-snd write invalid addr 0x%x", addr);
 }
 
 bool virtio_snd_init(virtio_snd_state_t *vsnd)
@@ -1250,10 +1231,10 @@ bool virtio_snd_init(virtio_snd_state_t *vsnd)
     /* Allocate the memory of private member. */
     vsnd->priv = &vsnd_configs[vsnd_dev_cnt++];
 
-    PRIV(vsnd)->jacks = 1;
-    PRIV(vsnd)->streams = 1;
-    PRIV(vsnd)->chmaps = 1;
-    PRIV(vsnd)->controls =
+    VSND_PRIV(vsnd)->jacks = 1;
+    VSND_PRIV(vsnd)->streams = 1;
+    VSND_PRIV(vsnd)->chmaps = 1;
+    VSND_PRIV(vsnd)->controls =
         0; /* virtio-snd device does not support control elements */
 
     tx_ev_notify = 0;

@@ -117,6 +117,16 @@ ifneq ("$(CC_IS_EMCC)", "1")
 endif
 endif
 
+# Extension: PortAudio (virtio-snd)
+ifeq ($(CONFIG_SYSTEM),y)
+ifneq ($(HAVE_PORTAUDIO),)
+    CFLAGS += $(PORTAUDIO_CFLAGS)
+    LDFLAGS += $(PORTAUDIO_LIBS)
+else ifeq ($(SKIP_DEPS_CHECK),)
+    $(warning PortAudio not found. virtio-snd will fail to link.)
+endif
+endif
+
 # Extension: GDB Stub
 ifeq ($(CONFIG_GDBSTUB),y)
 GDBSTUB_OUT = $(abspath $(OUT)/mini-gdbstub)
